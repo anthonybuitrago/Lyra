@@ -78,20 +78,26 @@ class MusicCog(commands.Cog):
             await self.update_dashboard()
 
     def create_dashboard_embed(self):
-        embed = discord.Embed(title="🎵   Lyra Player", color=config.COLOR_MAIN)
+        embed = discord.Embed(title="Lyra Player 🎵", color=config.COLOR_MAIN)
         
         if self.current_track:
-            status = "▶️ Now Playing"
+            status = "Now Playing ▶️"
             if self.voice_client and self.voice_client.is_paused():
-                status = "⏸️ Paused"
+                status = "Paused ⏸️"
             
             # Combine info into one main block for symmetry
             # description = f"**{self.current_track.title}**\n*{self.current_track.uploader}*\n`⏱️ {self.current_track.formatted_duration}`"
             # embed.add_field(name=status, value=description, inline=False)
             
             requester = self.current_track.requester.mention if self.current_track.requester else "Unknown"
-            description = f"**{self.current_track.title}**\n*{self.current_track.uploader}*\n⏱️ {self.current_track.formatted_duration} • ✨ {requester}\n"
+            
+            # Title and Artist
+            description = f"**{self.current_track.title}**\n*{self.current_track.uploader}*"
             embed.add_field(name=status, value=description, inline=False)
+            
+            # Inline fields for Duration and Requester
+            embed.add_field(name="Duration", value=self.current_track.formatted_duration, inline=True)
+            embed.add_field(name="Requested by", value=requester, inline=True)
             
             if self.current_track.thumbnail:
                 embed.set_thumbnail(url=self.current_track.thumbnail)
@@ -141,6 +147,14 @@ class MusicCog(commands.Cog):
             except Exception as e:
                 print(f"⚠️ ERROR in update_dashboard: {e}")
 
+    async def send_notification(self, text, color=config.COLOR_MAIN, delete_after=10):
+        if self.dashboard_channel:
+            try:
+                embed = discord.Embed(description=text, color=color)
+                await self.dashboard_channel.send(embed=embed, delete_after=delete_after)
+            except Exception as e:
+                print(f"⚠️ Error sending notification: {e}")
+
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot:
@@ -173,12 +187,16 @@ class MusicCog(commands.Cog):
             self.voice_client = await message.author.voice.channel.connect()
 
         # Add to queue
-        # msg = await message.channel.send(f"Searching for `{query}`...", delete_after=5)
+        search_msg = await message.channel.send(f"🔎 **Searching for:** `{query}`...")
         
         try:
             sources = await YTDLSource.create_source(query, loop=self.bot.loop, requester=message.author)
             self.queue.extend(sources)
             
+            # Delete search message when found
+            try: await search_msg.delete()
+            except: pass
+
             if not self.voice_client.is_playing():
                 self.play_next()
             else:
@@ -186,6 +204,8 @@ class MusicCog(commands.Cog):
                 await self.update_dashboard()
         except Exception as e:
             traceback.print_exc()
+            try: await search_msg.delete()
+            except: pass
             await message.channel.send(f"Error processing request: {str(e)}", delete_after=10)
 
     def play_next(self):
@@ -210,9 +230,19 @@ class MusicCog(commands.Cog):
             self.current_track = next_track
             self._play_track(self.current_track)
         else:
-            print("⏹️ Queue finished.")
+            print("⏹️ Queue finished. Starting auto-disconnect timer (3m).")
             self.current_track = None
             asyncio.run_coroutine_threadsafe(self.update_dashboard(), self.bot.loop)
+            asyncio.run_coroutine_threadsafe(self.start_disconnect_timer(), self.bot.loop)
+
+    async def start_disconnect_timer(self):
+        await asyncio.sleep(180) # 3 minutes
+        if self.voice_client and not self.voice_client.is_playing() and not self.queue:
+            await self.voice_client.disconnect()
+            self.voice_client = None
+            print("👋 Disconnected due to inactivity.")
+            await self.send_notification("👋 Left the voice channel due to inactivity.", color=config.COLOR_ERROR)
+            await self.update_dashboard()
 
     async def resolve_and_play(self, lazy_source):
         try:
@@ -250,6 +280,10 @@ class MusicCog(commands.Cog):
             elapsed = time.time() - self.start_time
             if elapsed < 10 and not self.manual_skip:
                 print(f"⚠️ Track finished too quickly ({int(elapsed)}s). Possible playback error or region lock.")
+                asyncio.run_coroutine_threadsafe(
+                    self.send_notification(f"⚠️ **Error:** Track finished too quickly ({int(elapsed)}s). It might be region-locked.", color=config.COLOR_ERROR),
+                    self.bot.loop
+                )
             else:
                 print("✅ Track finished")
         
