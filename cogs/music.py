@@ -50,12 +50,12 @@ class MusicCog(commands.Cog):
 
     async def setup_dashboard(self):
         await self.bot.wait_until_ready()
-        self.dashboard_channel = self.bot.get_channel(config.DASHBOARD_CHANNEL_ID)
+        self.dashboard_channel = self.bot.get_channel(config.MUSIC_CHANNEL_ID)
         
         if not self.dashboard_channel:
-            print(f"ERROR: Dashboard channel ID {config.DASHBOARD_CHANNEL_ID} not found! Check permissions or ID.")
+            print(f"ERROR: Dashboard channel ID {config.MUSIC_CHANNEL_ID} not found! Check permissions or ID.")
             try:
-                self.dashboard_channel = await self.bot.fetch_channel(config.DASHBOARD_CHANNEL_ID)
+                self.dashboard_channel = await self.bot.fetch_channel(config.MUSIC_CHANNEL_ID)
             except Exception as e:
                 print(f"CRITICAL ERROR: Could not fetch channel: {e}")
                 return
@@ -145,7 +145,7 @@ class MusicCog(commands.Cog):
         if message.author.bot:
             return
         
-        if message.channel.id != config.DASHBOARD_CHANNEL_ID:
+        if message.channel.id != config.MUSIC_CHANNEL_ID:
             return
 
         # Delete user message
