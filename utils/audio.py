@@ -93,7 +93,7 @@ async def fetch_better_metadata(title, artist=None):
                             }
 
     except Exception as e:
-        print(f"Metadata fetch error: {e}")
+        print(f"⚠️ Metadata fetch error: {e}")
     return None
 
 class YTDLSource(discord.PCMVolumeTransformer):

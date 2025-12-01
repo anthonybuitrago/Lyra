@@ -40,6 +40,7 @@ class MusicCog(commands.Cog):
         self.dashboard_channel = None
         self.loop_mode = 0 # 0=Off, 1=Track, 2=Queue
         self.start_time = 0
+        self.manual_skip = False
 
     async def cog_load(self):
         self.bot.add_view(DashboardView(self))
@@ -53,11 +54,11 @@ class MusicCog(commands.Cog):
         self.dashboard_channel = self.bot.get_channel(config.MUSIC_CHANNEL_ID)
         
         if not self.dashboard_channel:
-            print(f"ERROR: Dashboard channel ID {config.MUSIC_CHANNEL_ID} not found! Check permissions or ID.")
+            print(f"❌ ERROR: Dashboard channel ID {config.MUSIC_CHANNEL_ID} not found! Check permissions or ID.")
             try:
                 self.dashboard_channel = await self.bot.fetch_channel(config.MUSIC_CHANNEL_ID)
             except Exception as e:
-                print(f"CRITICAL ERROR: Could not fetch channel: {e}")
+                print(f"🚨 CRITICAL ERROR: Could not fetch channel: {e}")
                 return
 
         # Find existing dashboard message
@@ -71,7 +72,7 @@ class MusicCog(commands.Cog):
                 embed = self.create_dashboard_embed()
                 self.dashboard_message = await self.dashboard_channel.send(embed=embed, view=DashboardView(self))
             except Exception as e:
-                print(f"ERROR: Could not send message: {e}")
+                print(f"❌ ERROR: Could not send message: {e}")
         else:
             # Refresh view
             await self.update_dashboard()
@@ -138,7 +139,7 @@ class MusicCog(commands.Cog):
 
                 await self.dashboard_message.edit(embed=embed, view=view)
             except Exception as e:
-                print(f"ERROR in update_dashboard: {e}")
+                print(f"⚠️ ERROR in update_dashboard: {e}")
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -152,7 +153,7 @@ class MusicCog(commands.Cog):
         try:
             await message.delete()
         except Exception as e:
-            print(f"ERROR: Could not delete message: {e}")
+            print(f"⚠️ ERROR: Could not delete message: {e}")
 
         if not message.author.voice:
             msg = await message.channel.send(f"{message.author.mention}, please join a voice channel first!", delete_after=5)
@@ -181,13 +182,14 @@ class MusicCog(commands.Cog):
             if not self.voice_client.is_playing():
                 self.play_next()
             else:
+                print(f"📚 Added to queue: {sources[0].title} (Queue size: {len(self.queue)})")
                 await self.update_dashboard()
         except Exception as e:
             traceback.print_exc()
             await message.channel.send(f"Error processing request: {str(e)}", delete_after=10)
 
     def play_next(self):
-        print("DEBUG: play_next called")
+        print("🐛 Checking queue...")
         
         # Loop Track Logic
         if self.loop_mode == 1 and self.current_track:
@@ -208,7 +210,7 @@ class MusicCog(commands.Cog):
             self.current_track = next_track
             self._play_track(self.current_track)
         else:
-            print("DEBUG: Queue empty, stopping")
+            print("⏹️ Queue finished.")
             self.current_track = None
             asyncio.run_coroutine_threadsafe(self.update_dashboard(), self.bot.loop)
 
@@ -220,21 +222,22 @@ class MusicCog(commands.Cog):
                 self.current_track = sources[0]
                 self._play_track(self.current_track)
             else:
-                print("Error: Resolved source is empty")
+                print("⚠️ Error: Resolved source is empty")
                 self.play_next()
         except Exception as e:
-            print(f"Error resolving track: {e}")
+            print(f"❌ Error resolving track: {e}")
             traceback.print_exc()
             self.play_next()
 
     def _play_track(self, track):
-        print(f"DEBUG: Playing track: {track.title}")
+        self.manual_skip = False
+        print(f"▶️ Now Playing: {track.title} ({track.formatted_duration}) | 👤 {track.requester.name}")
         try:
             self.voice_client.play(track, after=self.after_play)
             self.start_time = time.time()
-            print("DEBUG: FFmpeg started playing")
+            print("🎵 Audio stream started")
         except Exception as e:
-            print(f"ERROR in voice_client.play: {e}")
+            print(f"❌ ERROR in voice_client.play: {e}")
             traceback.print_exc()
             self.play_next() # Skip if error
         
@@ -242,9 +245,13 @@ class MusicCog(commands.Cog):
 
     def after_play(self, error):
         if error:
-            print(f"ERROR in after_play: {error}")
+            print(f"❌ ERROR in after_play: {error}")
         else:
-            print("DEBUG: Track finished normally")
+            elapsed = time.time() - self.start_time
+            if elapsed < 10 and not self.manual_skip:
+                print(f"⚠️ Track finished too quickly ({int(elapsed)}s). Possible playback error or region lock.")
+            else:
+                print("✅ Track finished")
         
         # Handle Loop
         if self.loop_mode == 1 and self.current_track: # Loop Track
@@ -278,7 +285,7 @@ class MusicCog(commands.Cog):
             
             self.play_next()
         except Exception as e:
-            print(f"Error requeueing: {e}")
+            print(f"⚠️ Error requeueing: {e}")
             self.play_next()
 
     # --- Button Actions ---
@@ -298,30 +305,32 @@ class MusicCog(commands.Cog):
             
             await self.update_dashboard()
         except Exception as e:
-            print(f"ERROR in toggle_pause: {e}")
+            print(f"❌ ERROR in toggle_pause: {e}")
             traceback.print_exc()
 
     async def skip_track(self, interaction):
         try:
             if not self.voice_client or not self.voice_client.is_playing():
                 return await interaction.response.defer()
+            self.manual_skip = True
             self.voice_client.stop() # This triggers after_play -> play_next
             await interaction.response.defer()
         except Exception as e:
-            print(f"ERROR in skip_track: {e}")
+            print(f"❌ ERROR in skip_track: {e}")
             traceback.print_exc()
 
     async def stop_player(self, interaction):
         try:
             self.queue.clear()
             if self.voice_client:
+                self.manual_skip = True
                 self.voice_client.stop()
                 # Do not disconnect, just stop playing
             self.current_track = None
             await self.update_dashboard()
             await interaction.response.defer()
         except Exception as e:
-            print(f"ERROR in stop_player: {e}")
+            print(f"❌ ERROR in stop_player: {e}")
             traceback.print_exc()
 
     async def shuffle_queue(self, interaction):
@@ -334,7 +343,7 @@ class MusicCog(commands.Cog):
             await self.update_dashboard()
             await interaction.response.defer()
         except Exception as e:
-            print(f"ERROR in shuffle_queue: {e}")
+            print(f"❌ ERROR in shuffle_queue: {e}")
             traceback.print_exc()
 
 

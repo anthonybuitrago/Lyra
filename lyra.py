@@ -14,8 +14,8 @@ class LyraBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents, help_command=None)
 
     async def on_ready(self):
-        print(f'Logged in as {self.user} (ID: {self.user.id})')
-        print('------')
+        print(f'✅ Logged in as {self.user} (ID: {self.user.id})')
+        print('➖ ------')
 
 async def main():
     bot = LyraBot()
@@ -23,9 +23,9 @@ async def main():
     # Load Cogs
     try:
         await bot.load_extension('cogs.music')
-        print("Loaded extension: cogs.music")
+        print("📦 Loaded extension: cogs.music")
     except Exception as e:
-        print(f"Failed to load extension cogs.music: {e}")
+        print(f"❌ Failed to load extension cogs.music: {e}")
 
     await bot.start(config.TOKEN)
 
