@@ -206,7 +206,17 @@ class MusicCog(commands.Cog):
             traceback.print_exc()
             try: await search_msg.delete()
             except: pass
-            await message.channel.send(f"Error processing request: {str(e)}", delete_after=10)
+
+            error_msg = str(e)
+            if "DRM protection" in error_msg:
+                embed = discord.Embed(
+                    title="❌ Contenido Protegido (DRM)",
+                    description="Esta canción o video tiene protección de derechos de autor y no se puede reproducir.\n\n**Solución:** Intenta buscar una versión alternativa (ej. 'Lyrics' o 'Audio').",
+                    color=config.COLOR_ERROR
+                )
+                await message.channel.send(embed=embed, delete_after=15)
+            else:
+                await message.channel.send(f"Error processing request: {str(e)}", delete_after=10)
 
     def play_next(self):
         print("🐛 Checking queue...")
